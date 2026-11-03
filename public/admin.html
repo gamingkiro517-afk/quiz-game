@@ -1,60 +1,134 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bảng Điều Khiển Admin</title>
     <style>
-        body { font-family: Arial; text-align: center; margin-top: 50px; }
-        .btn { padding: 15px 30px; font-size: 20px; cursor: pointer; background: #4CAF50; color: white; border: none; }
-        #controls { display: none; margin-top: 30px; }
-        .score { font-size: 24px; font-weight: bold; margin: 20px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .header-panel { display: flex; justify-content: space-between; align-items: center; }
+        .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; color: white; margin: 0 5px; }
+        .btn-green { background-color: #34a853; }
+        .btn-red { background-color: #ea4335; }
+        .btn-blue { background-color: #1a73e8; }
+        .btn-yellow { background-color: #fbbc04; color: black; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .stats { display: flex; gap: 20px; font-size: 20px; font-weight: bold; }
+        .team-1 { color: #1a73e8; }
+        .team-2 { color: #ea4335; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f8f9fa; }
+        #loginPanel { text-align: center; max-width: 400px; margin: 100px auto; }
+        #loginPanel input { width: 100%; padding: 12px; margin-bottom: 15px; }
+        #dashboardPanel { display: none; }
+        .badge { padding: 5px 10px; border-radius: 12px; font-size: 14px; color: white; }
+        .bg-success { background: #34a853; }
+        .bg-warning { background: #fbbc04; color: black; }
     </style>
 </head>
 <body>
-    <div id="login">
-        <input type="password" id="pass" placeholder="Mật khẩu Admin">
-        <button onclick="login()">Đăng nhập</button>
-    </div>
+    <div class="container">
+        <div class="card" id="loginPanel">
+            <h2>Đăng nhập Quản trị</h2>
+            <input type="password" id="adminPass" placeholder="Nhập mật khẩu Admin">
+            <button class="btn btn-blue" onclick="login()">Truy cập</button>
+        </div>
 
-    <div id="controls">
-        <h2>Điều khiển</h2>
-        <button class="btn" onclick="nextQuestion()">Chuyển câu tiếp theo</button>
-        <div id="timer" style="font-size: 30px; margin: 20px; color: red;"></div>
-        <div class="score">Điểm Tổ 1: <span id="score1">0</span></div>
-        <div class="score">Điểm Tổ 2: <span id="score2">0</span></div>
+        <div id="dashboardPanel">
+            <div class="card header-panel">
+                <div>
+                    <h2>Bảng Điều Khiển</h2>
+                    <p>Trạng thái: <span id="gameStatusLabel" style="font-weight: bold;">Đang chờ</span> | Câu hỏi: <span id="currentQText">-</span>/50</p>
+                </div>
+                <div>
+                    <button id="btnStart" class="btn btn-green" onclick="emitAction('startGame')">▶ Start</button>
+                    <button id="btnStop" class="btn btn-yellow" onclick="emitAction('stopGame')">⏸ Stop</button>
+                    <button id="btnNext" class="btn btn-blue" onclick="emitAction('nextQuestion')">Chuyển câu tiếp</button>
+                    <button class="btn btn-red" onclick="if(confirm('Khởi động lại sẽ xóa sạch điểm và làm lại từ đầu. Chắc chắn?')) emitAction('restartGame')">🔄 Restart</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="stats">
+                    <div class="team-1">Tổng điểm Tổ 1: <span id="score1">0</span></div>
+                    <div class="team-2">Tổng điểm Tổ 2: <span id="score2">0</span></div>
+                    <div>Thí sinh đã trả lời: <span id="answerCount">0/0</span></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Danh sách người tham gia & Bảng xếp hạng</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Hạng</th>
+                            <th>Họ và Tên</th>
+                            <th>Tổ</th>
+                            <th>Trạng thái hiện tại</th>
+                            <th>Tổng điểm</th>
+                        </tr>
+                    </thead>
+                    <tbody id="playerTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+
         function login() {
-            socket.emit('adminAuth', document.getElementById('pass').value, (success) => {
+            socket.emit('adminAuth', document.getElementById('adminPass').value, (success) => {
                 if(success) {
-                    document.getElementById('login').style.display = 'none';
-                    document.getElementById('controls').style.display = 'block';
+                    document.getElementById('loginPanel').style.display = 'none';
+                    document.getElementById('dashboardPanel').style.display = 'block';
                 } else {
                     alert('Sai mật khẩu!');
                 }
             });
         }
 
-        function nextQuestion() {
-            socket.emit('nextQuestion');
+        function emitAction(action) {
+            socket.emit(action);
         }
 
-        socket.on('timer', (time) => {
-            document.getElementById('timer').innerText = `Thời gian: ${time}s`;
+        socket.on('dashboardData', (data) => {
+            // Cập nhật trạng thái nút
+            document.getElementById('btnStart').disabled = data.status === 'running';
+            document.getElementById('btnStop').disabled = data.status !== 'running';
+            document.getElementById('btnNext').disabled = data.status !== 'running' || data.isActive;
+
+            // Cập nhật text trạng thái
+            const statuses = { 'waiting': 'Đang chờ thí sinh', 'running': 'Đang thi', 'stopped': 'Đã tạm dừng / Kết thúc' };
+            document.getElementById('gameStatusLabel').innerText = statuses[data.status];
+            document.getElementById('currentQText').innerText = data.currentQuestion >= 0 ? data.currentQuestion + 1 : '-';
+
+            // Cập nhật điểm
+            document.getElementById('score1').innerText = data.teamScores.team1;
+            document.getElementById('score2').innerText = data.teamScores.team2;
+            document.getElementById('answerCount').innerText = `${data.answeredCount}/${data.totalPlayers}`;
+
+            // Cập nhật bảng xếp hạng
+            const tbody = document.getElementById('playerTableBody');
+            tbody.innerHTML = '';
+            data.players.forEach(p => {
+                const tr = document.createElement('tr');
+                const statusBadge = p.answered ? '<span class="badge bg-success">Đã chọn xong</span>' : '<span class="badge bg-warning">Chờ chốt</span>';
+                tr.innerHTML = `
+                    <td><strong>#${p.rank}</strong></td>
+                    <td>${p.name}</td>
+                    <td>Tổ ${p.team}</td>
+                    <td>${data.isActive ? statusBadge : '-'}</td>
+                    <td><strong>${p.score}</strong></td>
+                `;
+                tbody.appendChild(tr);
+            });
         });
-
-        socket.on('updateScores', updateScoreBoard);
-        socket.on('questionEnd', (data) => updateScoreBoard(data.scores));
-
-        function updateScoreBoard(scores) {
-            if(scores) {
-                document.getElementById('score1').innerText = scores.team1;
-                document.getElementById('score2').innerText = scores.team2;
-            }
-        }
     </script>
 </body>
 </html>
