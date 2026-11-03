@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Người chơi</title>
+    <style>
+        body { font-family: Arial; text-align: center; margin-top: 50px; }
+        .btn { padding: 15px 30px; margin: 10px; font-size: 20px; cursor: pointer; }
+        #gameArea { display: none; }
+        #timer { font-size: 40px; color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="loginArea">
+        <h2>Nhập thông tin</h2>
+        <input type="text" id="playerName" placeholder="Tên của bạn"><br><br>
+        <select id="teamSelect">
+            <option value="1">Tổ 1</option>
+            <option value="2">Tổ 2</option>
+        </select><br><br>
+        <button onclick="joinGame()" class="btn">Vào thi</button>
+    </div>
+
+    <div id="gameArea">
+        <h2 id="questionText">Đang đợi Admin bắt đầu...</h2>
+        <div id="timer">15</div>
+        <div id="options">
+            <button class="btn" onclick="submit('A')">A</button>
+            <button class="btn" onclick="submit('B')">B</button>
+            <button class="btn" onclick="submit('C')">C</button>
+            <button class="btn" onclick="submit('D')">D</button>
+        </div>
+        <h3 id="status"></h3>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        function joinGame() {
+            const name = document.getElementById('playerName').value;
+            const team = document.getElementById('teamSelect').value;
+            if (!name) return alert('Vui lòng nhập tên');
+            socket.emit('join', { name, team });
+            document.getElementById('loginArea').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+        }
+
+        function submit(ans) {
+            socket.emit('submitAnswer', ans);
+            document.getElementById('options').style.display = 'none';
+            document.getElementById('status').innerText = `Đã chọn: ${ans}. Đợi kết quả...`;
+        }
+
+        socket.on('newQuestion', (data) => {
+            document.getElementById('questionText').innerText = `Câu hỏi số ${data.questionNumber}`;
+            document.getElementById('options').style.display = 'block';
+            document.getElementById('status').innerText = '';
+        });
+
+        socket.on('timer', (time) => {
+            document.getElementById('timer').innerText = time;
+        });
+
+        socket.on('questionEnd', (data) => {
+            document.getElementById('options').style.display = 'none';
+            document.getElementById('status').innerHTML = `Hết giờ! Đáp án đúng: <b>${data.correctAnswer}</b><br>Tổ 1: ${data.scores.team1} điểm | Tổ 2: ${data.scores.team2} điểm`;
+            if (data.isFinished) {
+                document.getElementById('questionText').innerText = "ĐÃ HOÀN THÀNH 50 CÂU!";
+            }
+        });
+    </script>
+</body>
+</html>

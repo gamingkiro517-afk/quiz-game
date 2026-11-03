@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Bảng Điều Khiển Admin</title>
+    <style>
+        body { font-family: Arial; text-align: center; margin-top: 50px; }
+        .btn { padding: 15px 30px; font-size: 20px; cursor: pointer; background: #4CAF50; color: white; border: none; }
+        #controls { display: none; margin-top: 30px; }
+        .score { font-size: 24px; font-weight: bold; margin: 20px; }
+    </style>
+</head>
+<body>
+    <div id="login">
+        <input type="password" id="pass" placeholder="Mật khẩu Admin">
+        <button onclick="login()">Đăng nhập</button>
+    </div>
+
+    <div id="controls">
+        <h2>Điều khiển</h2>
+        <button class="btn" onclick="nextQuestion()">Chuyển câu tiếp theo</button>
+        <div id="timer" style="font-size: 30px; margin: 20px; color: red;"></div>
+        <div class="score">Điểm Tổ 1: <span id="score1">0</span></div>
+        <div class="score">Điểm Tổ 2: <span id="score2">0</span></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        function login() {
+            socket.emit('adminAuth', document.getElementById('pass').value, (success) => {
+                if(success) {
+                    document.getElementById('login').style.display = 'none';
+                    document.getElementById('controls').style.display = 'block';
+                } else {
+                    alert('Sai mật khẩu!');
+                }
+            });
+        }
+
+        function nextQuestion() {
+            socket.emit('nextQuestion');
+        }
+
+        socket.on('timer', (time) => {
+            document.getElementById('timer').innerText = `Thời gian: ${time}s`;
+        });
+
+        socket.on('updateScores', updateScoreBoard);
+        socket.on('questionEnd', (data) => updateScoreBoard(data.scores));
+
+        function updateScoreBoard(scores) {
+            if(scores) {
+                document.getElementById('score1').innerText = scores.team1;
+                document.getElementById('score2').innerText = scores.team2;
+            }
+        }
+    </script>
+</body>
+</html>
