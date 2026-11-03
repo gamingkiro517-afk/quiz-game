@@ -1,60 +1,88 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Người chơi</title>
+    <title>Tham Gia Trắc Nghiệm</title>
     <style>
-        body { font-family: Arial; text-align: center; margin-top: 50px; }
-        .btn { padding: 15px 30px; margin: 10px; font-size: 20px; cursor: pointer; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; text-align: center; margin: 0; padding: 20px; color: #333; }
+        .container { background: white; max-width: 500px; margin: 20px auto; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h2 { color: #1a73e8; }
+        input, select, button { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button { background-color: #1a73e8; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #1557b0; }
         #gameArea { display: none; }
-        #timer { font-size: 40px; color: red; font-weight: bold; }
+        .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .option-btn { font-size: 24px; padding: 20px; background-color: #e8f0fe; color: #1a73e8; border: 2px solid #1a73e8; }
+        .option-btn:active { background-color: #1a73e8; color: white; }
+        #timer { font-size: 50px; font-weight: bold; color: #d93025; margin: 15px 0; }
+        .score-board { background: #fff3cd; padding: 10px; border-radius: 6px; font-size: 18px; font-weight: bold; margin-bottom: 20px; color: #856404; border: 1px solid #ffeeba; }
     </style>
 </head>
 <body>
-    <div id="loginArea">
-        <h2>Nhập thông tin</h2>
-        <input type="text" id="playerName" placeholder="Tên của bạn"><br><br>
+    <div class="container" id="loginArea">
+        <h2>Đăng Ký Thi</h2>
+        <input type="text" id="playerName" placeholder="Nhập Họ và Tên của bạn" required>
         <select id="teamSelect">
-            <option value="1">Tổ 1</option>
-            <option value="2">Tổ 2</option>
-        </select><br><br>
-        <button onclick="joinGame()" class="btn">Vào thi</button>
+            <option value="1">Thành viên Tổ 1</option>
+            <option value="2">Thành viên Tổ 2</option>
+        </select>
+        <button onclick="joinGame()">Vào Phòng Chờ</button>
     </div>
 
-    <div id="gameArea">
+    <div class="container" id="gameArea">
+        <div class="score-board">Điểm của bạn: <span id="myScore">0</span></div>
         <h2 id="questionText">Đang đợi Admin bắt đầu...</h2>
-        <div id="timer">15</div>
-        <div id="options">
-            <button class="btn" onclick="submit('A')">A</button>
-            <button class="btn" onclick="submit('B')">B</button>
-            <button class="btn" onclick="submit('C')">C</button>
-            <button class="btn" onclick="submit('D')">D</button>
+        <div id="timer">-</div>
+        
+        <div class="options-grid" id="options" style="display: none;">
+            <button class="option-btn" onclick="submit('A')">A</button>
+            <button class="option-btn" onclick="submit('B')">B</button>
+            <button class="option-btn" onclick="submit('C')">C</button>
+            <button class="option-btn" onclick="submit('D')">D</button>
         </div>
-        <h3 id="status"></h3>
+        <h3 id="status" style="margin-top: 20px; color: #5f6368;"></h3>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+
         function joinGame() {
             const name = document.getElementById('playerName').value;
             const team = document.getElementById('teamSelect').value;
-            if (!name) return alert('Vui lòng nhập tên');
+            if (!name) return alert('Vui lòng nhập tên!');
             socket.emit('join', { name, team });
+        }
+
+        socket.on('joinError', (msg) => alert(msg));
+        
+        socket.on('joinSuccess', () => {
             document.getElementById('loginArea').style.display = 'none';
             document.getElementById('gameArea').style.display = 'block';
-        }
+        });
+
+        socket.on('gameStatusChanged', (status) => {
+            if (status === 'stopped') {
+                document.getElementById('questionText').innerText = "Bài thi đang tạm dừng...";
+                document.getElementById('options').style.display = 'none';
+            }
+        });
+
+        socket.on('gameRestarted', () => {
+            alert('Admin đã khởi động lại bài thi. Vui lòng đăng nhập lại.');
+            window.location.reload();
+        });
 
         function submit(ans) {
             socket.emit('submitAnswer', ans);
             document.getElementById('options').style.display = 'none';
-            document.getElementById('status').innerText = `Đã chọn: ${ans}. Đợi kết quả...`;
+            document.getElementById('status').innerText = `Bạn đã chọn: ${ans}. Vui lòng đợi...`;
         }
 
         socket.on('newQuestion', (data) => {
             document.getElementById('questionText').innerText = `Câu hỏi số ${data.questionNumber}`;
-            document.getElementById('options').style.display = 'block';
+            document.getElementById('options').style.display = 'grid';
             document.getElementById('status').innerText = '';
         });
 
@@ -62,11 +90,18 @@
             document.getElementById('timer').innerText = time;
         });
 
+        socket.on('updateMyScore', (score) => {
+            document.getElementById('myScore').innerText = score;
+        });
+
         socket.on('questionEnd', (data) => {
             document.getElementById('options').style.display = 'none';
-            document.getElementById('status').innerHTML = `Hết giờ! Đáp án đúng: <b>${data.correctAnswer}</b><br>Tổ 1: ${data.scores.team1} điểm | Tổ 2: ${data.scores.team2} điểm`;
             if (data.isFinished) {
-                document.getElementById('questionText').innerText = "ĐÃ HOÀN THÀNH 50 CÂU!";
+                document.getElementById('questionText').innerText = "🎉 BÀI THI KẾT THÚC 🎉";
+                document.getElementById('timer').innerText = "-";
+                document.getElementById('status').innerHTML = `Đáp án câu cuối là <b>${data.correctAnswer}</b>`;
+            } else {
+                document.getElementById('status').innerHTML = `Hết giờ! Đáp án đúng: <b>${data.correctAnswer}</b>`;
             }
         });
     </script>
