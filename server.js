@@ -9,16 +9,16 @@ const io = new Server(server);
 app.use(express.static('public'));
 
 const ADMIN_PASS = '140206';
-// Mảng 50 đáp án trích xuất từ bảng tổng hợp[cite: 1]
 const ANSWERS = [
-    'B','C','A','B','C','B','D','A','C','B', // 1-10
-    'D','C','A','B','C','B','D','A','D','C', // 11-20
-    'C','B','B','A','D','C','C','B','A','B', // 21-30
-    'A','B','C','C','B','D','A','A','A','B', // 31-40
-    'A','C','A','A','C','B','C','B','B','A'  // 41-50
+    'B','C','A','B','C','B','D','A','C','B', 
+    'D','C','A','B','C','B','D','A','D','C', 
+    'C','B','B','A','D','C','C','B','A','B', 
+    'A','B','C','C','B','D','A','A','A','B', 
+    'A','C','A','A','C','B','C','B','B','A'
 ];
 
 let gameState = {
+    status: 'waiting', // Trạng thái: waiting (chờ), running (đang thi), stopped (tạm dừng)
     currentQuestion: -1,
     isActive: false,
     players: {}, 
@@ -29,27 +29,72 @@ let timer;
 
 io.on('connection', (socket) => {
     socket.on('join', (data) => {
-        gameState.players[socket.id] = { name: data.name, team: data.team, score: 0, answered: false };
-        io.emit('updateScores', getScores());
+        if (gameState.status !== 'waiting') {
+            socket.emit('joinError', 'Bài thi đang diễn ra, bạn không thể tham gia lúc này!');
+            return;
+        }
+        gameState.players[socket.id] = { id: socket.id, name: data.name, team: data.team, score: 0, answered: false };
+        socket.emit('joinSuccess');
+        updateAdminDashboard();
     });
 
     socket.on('submitAnswer', (answer) => {
         let player = gameState.players[socket.id];
-        if (player && gameState.isActive && !player.answered) {
+        if (player && gameState.isActive && !player.answered && gameState.status === 'running') {
             player.answered = true;
             if (answer === ANSWERS[gameState.currentQuestion]) {
                 gameState.correctResponders.push(socket.id);
             }
             socket.emit('answerReceived');
+            updateAdminDashboard();
         }
     });
 
     socket.on('adminAuth', (pass, callback) => {
-        callback(pass === ADMIN_PASS);
+        if (pass === ADMIN_PASS) {
+            socket.join('adminRoom');
+            callback(true);
+            updateAdminDashboard();
+        } else {
+            callback(false);
+        }
+    });
+
+    socket.on('startGame', () => {
+        if (gameState.status === 'waiting' || gameState.status === 'stopped') {
+            gameState.status = 'running';
+            io.emit('gameStatusChanged', 'running');
+            updateAdminDashboard();
+        }
+    });
+
+    socket.on('stopGame', () => {
+        gameState.status = 'stopped';
+        gameState.isActive = false;
+        clearInterval(timer);
+        io.emit('gameStatusChanged', 'stopped');
+        updateAdminDashboard();
+    });
+
+    socket.on('restartGame', () => {
+        gameState.status = 'waiting';
+        gameState.currentQuestion = -1;
+        gameState.isActive = false;
+        gameState.correctResponders = [];
+        gameState.timeLeft = 15;
+        // Reset toàn bộ điểm người chơi hiện tại
+        for (let id in gameState.players) {
+            gameState.players[id].score = 0;
+            gameState.players[id].answered = false;
+        }
+        clearInterval(timer);
+        io.emit('gameRestarted');
+        updateAdminDashboard();
     });
 
     socket.on('nextQuestion', () => {
-        if (gameState.currentQuestion >= 49) return;
+        if (gameState.status !== 'running' || gameState.currentQuestion >= 49) return;
+        
         gameState.currentQuestion++;
         gameState.isActive = true;
         gameState.correctResponders = [];
@@ -60,6 +105,7 @@ io.on('connection', (socket) => {
         }
 
         io.emit('newQuestion', { questionNumber: gameState.currentQuestion + 1 });
+        updateAdminDashboard();
 
         clearInterval(timer);
         timer = setInterval(() => {
@@ -73,14 +119,16 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        delete gameState.players[socket.id];
-        io.emit('updateScores', getScores());
+        if (gameState.players[socket.id]) {
+            delete gameState.players[socket.id];
+            updateAdminDashboard();
+        }
     });
 });
 
 function endQuestion() {
     gameState.isActive = false;
-    // Tính điểm dựa trên tốc độ
+    
     gameState.correctResponders.forEach((id, index) => {
         let player = gameState.players[id];
         if (player) {
@@ -92,21 +140,42 @@ function endQuestion() {
     });
     
     const isFinished = gameState.currentQuestion === 49;
+    if (isFinished) gameState.status = 'stopped';
+    
+    for (let id in gameState.players) {
+        io.to(id).emit('updateMyScore', gameState.players[id].score);
+    }
+
     io.emit('questionEnd', { 
         correctAnswer: ANSWERS[gameState.currentQuestion], 
-        scores: getScores(),
         isFinished: isFinished
     });
+    
+    updateAdminDashboard();
 }
 
-function getScores() {
-    let team1 = 0, team2 = 0;
-    for (let id in gameState.players) {
-        let p = gameState.players[id];
-        if (p.team === '1') team1 += p.score;
-        if (p.team === '2') team2 += p.score;
+function updateAdminDashboard() {
+    let playersArr = Object.values(gameState.players);
+    playersArr.sort((a, b) => b.score - a.score); // Xếp hạng theo điểm
+    
+    let rank = 1;
+    for (let i = 0; i < playersArr.length; i++) {
+        if (i > 0 && playersArr[i].score < playersArr[i-1].score) rank = i + 1;
+        playersArr[i].rank = rank;
     }
-    return { team1, team2 };
+
+    let team1 = playersArr.filter(p => p.team === '1').reduce((sum, p) => sum + p.score, 0);
+    let team2 = playersArr.filter(p => p.team === '2').reduce((sum, p) => sum + p.score, 0);
+
+    io.to('adminRoom').emit('dashboardData', {
+        status: gameState.status,
+        currentQuestion: gameState.currentQuestion,
+        isActive: gameState.isActive,
+        players: playersArr,
+        teamScores: { team1, team2 },
+        answeredCount: Object.values(gameState.players).filter(p => p.answered).length,
+        totalPlayers: playersArr.length
+    });
 }
 
 const PORT = process.env.PORT || 3000;
